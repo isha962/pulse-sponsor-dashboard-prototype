@@ -1,4 +1,4 @@
-from datetime import date, timedelta
+from datetime import timedelta
 from sqlalchemy.orm import Session
 from sqlalchemy import select, func
 
@@ -65,7 +65,15 @@ def get_timeseries(db: Session, user_id: str, metric: str, days: int = 14) -> li
     if not event_ids:
         return []
 
-    start = date.today() - timedelta(days=days - 1)
+    # Find the latest date that actually has data for this sponsor's events
+    max_date_q = select(func.max(EventMetrics.date)).where(EventMetrics.event_id.in_(event_ids))
+    end_date = db.execute(max_date_q).scalar()
+
+    # If there is no data at all, return an empty chart
+    if end_date is None:
+        return []
+
+    start = end_date - timedelta(days=days - 1)
 
     metric_col = getattr(EventMetrics, metric)
     q = (
@@ -75,6 +83,7 @@ def get_timeseries(db: Session, user_id: str, metric: str, days: int = 14) -> li
         )
         .where(EventMetrics.event_id.in_(event_ids))
         .where(EventMetrics.date >= start)
+        .where(EventMetrics.date <= end_date)
         .group_by(EventMetrics.date)
         .order_by(EventMetrics.date.asc())
     )
